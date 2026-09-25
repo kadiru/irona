@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="irona-token" content="{{ token }}">
+  <title>Irona</title>
+  <link rel="icon" href="/static/icons/audio-lines.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="workspace">
+    <header class="header">
+      <div class="brand"><img src="/static/icons/audio-lines.svg" alt="" width="30" height="30"><h1>Irona</h1></div>
+      <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Connecting</span></div>
+    </header>
+    <main>
+      <section class="conversation" aria-label="Conversation">
+        <div class="conversation-heading"><h2>Conversation</h2><div class="conversation-actions"><button id="stop" class="icon-button" aria-label="Stop audio" title="Stop audio" disabled><img src="/static/icons/square.svg" alt="" width="17" height="17"></button><button id="reset" class="icon-button" aria-label="Reset conversation" title="Reset conversation" disabled><img src="/static/icons/rotate-ccw.svg" alt="" width="19" height="19"></button></div></div>
+        <div id="transcript" class="transcript" role="log" aria-live="polite" aria-relevant="additions text">
+          <div class="empty" id="empty"><img src="/static/icons/audio-lines.svg" alt="" width="40" height="40"><p>Ready</p></div>
+        </div>
+        <div id="error" class="error" role="alert" hidden></div>
+        <div class="turn-status" aria-live="polite"><span id="phase">Connecting</span><span id="timing"></span></div>
+        <form id="composer" class="composer">
+          <label class="sr-only" for="message">Message to Irona</label>
+          <textarea id="message" placeholder="Message Irona" rows="2" maxlength="2000" autofocus></textarea>
+          <div class="composer-actions"><span id="count">0 / 2,000</span><button id="send" class="send icon-button" type="submit" aria-label="Send message" title="Send message" disabled><img src="/static/icons/send.svg" alt="" width="20" height="20"></button></div>
+        </form>
+      </section>
+      <aside aria-label="Session">
+        <h2>Session</h2>
+        <dl class="session-details">
+          <div><dt>Language model</dt><dd id="model">Connecting</dd><dd class="detail">Local inference</dd></div>
+          <div><dt>Voice</dt><dd id="voice">Connecting</dd><dd id="tts-model" class="detail">ElevenLabs</dd></div>
+          <div><dt>Audio destination</dt><dd id="destination">Connecting</dd><dd id="output-detail" class="detail"></dd><dd id="sink" class="sink"></dd></div>
+        </dl>
+        <div class="playback">
+          <div class="playback-heading"><span id="playback-label">Silent</span></div>
+          <div class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <span id="turns" class="detail">0 spoken turns</span>
+        </div>
+        <p class="privacy">Reply text is sent to ElevenLabs for speech.</p>
+      </aside>
+    </main>
+    <footer><span>Irona / Day one</span><span id="session-state">Session in memory</span></footer>
+  </div>
+</body>
+</html>

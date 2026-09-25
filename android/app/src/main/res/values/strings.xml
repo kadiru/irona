@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Irona Player</string>
+    <string name="irona">Irona</string>
+    <string name="destination">Temi speakers</string>
+    <string name="stop_audio">Stop audio</string>
+    <string name="connection_unavailable">Connection unavailable</string>
+    <string name="port_busy">Local receiver port is in use.</string>
+    <string name="pairing_required">Pairing required</string>
+    <string name="token_missing">Missing private pairing token.</string>
+    <string name="ready">Ready</string>
+    <string name="idle">No active audio</string>
+    <string name="speaking">Speaking</string>
+    <string name="preparing">Preparing audio</string>
+    <string name="playback_error">Playback error</string>
+</resources>
