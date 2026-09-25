@@ -1,40 +1,157 @@
 # Irona
 
-Type a message, generate a reply locally, synthesize it with ElevenLabs, and play
-it through an explicitly configured Temi robot or Ubuntu speaker.
+Irona is a small conversational application with a robot audio endpoint. Type a
+message in a browser, generate a reply on an Ubuntu desktop, convert it into
+speech with ElevenLabs, and hear it through a Temi robot.
 
-The browser is a controller, never an audio destination. **Ubuntu desktop
-speakers are a development fallback, not robot integration.** ElevenLabs
-receives reply text, so this is **not fully offline**.
+The project connects existing AI and audio components; it does not train a new
+model or introduce a full robotics framework. Its own code consists of a browser
+interface, a Python coordinator, a small Android player, setup scripts, and tests.
+
+**Ubuntu generates and coordinates, ElevenLabs synthesizes, Temi speaks, and
+the browser controls.** Reply text leaves the machine for ElevenLabs, so this
+is **not fully offline**. Ubuntu speakers are an explicitly selected development
+output, never an automatic fallback when Temi is unavailable.
+
+[How it works](#architecture) | [Ubuntu setup](#setup-on-ubuntu) |
+[Launch](#launch) | [Temi setup](docs/temi-integration.md) |
+[Verification](docs/verification.md)
 
 ## Architecture
 
 ```text
-Browser -> Ubuntu localhost Flask app -> local Ollama -> ElevenLabs HTTPS
-                                     -> ADB forward -> Temi player -> speakers
-                                     OR FFmpeg -> paplay -> Ubuntu sink
+Browser on the Mac
+        |
+        | HTTP through an SSH tunnel
+        v
+Irona Python application on Ubuntu
+        |
+        +--> Ollama --> Qwen model on the Ubuntu GPU
+        |                 |
+        |<----------------+ reply text
+        |
+        +--> ElevenLabs cloud
+        |          |
+        |<---------+ speech audio
+        |
+        +--> ADB connection over Wi-Fi
+                   |
+                   v
+            Irona Player on Temi
+                   |
+              Temi speakers
 ```
 
-Ubuntu runs inference, TTS requests, and the controller; a small native Android
-app plays audio on Temi. A Mac can control Irona through an SSH tunnel.
-The owner confirmed Elise and three consecutive conversational replies from
-Temi's speakers. Stop, context recall, and reset passed live checks.
-See `docs/temi-integration.md` before selecting `IRONA_AUDIO_OUTPUT=temi`.
-There is no frontend build, browser audio, ROS, database, or agent framework.
-One worker handles one turn at a time. The browser polls for stage changes.
+The browser can also run directly on Ubuntu without the SSH tunnel. In either
+case it only sends commands and displays state; it never plays the audio.
 
-- Local model: `qwen3.5:4b`, thinking disabled, 4,096-token context.
-- Voice: Elise - Warm, Natural and Engaging (`EST9Ui6982FZPSi7gCHi`).
-- TTS model: `eleven_flash_v2_5`, chosen for short conversational replies.
-- Personality: edit `irona/system_prompt.txt` and restart. Replies are normally
-  one or two sentences.
-- History: last six reply pairs in memory; UI retains up to 40 messages. Reset
-  clears both; a restart starts a fresh conversation.
-- Temporary MP3/WAV files live under ignored `.runtime/audio/` and are removed
-  after playback, failure, or stop. Power loss or forced termination can leave
-  temporary files. Irona does not write transcript files.
-- Stop applies during playback, not generation or synthesis. Stopped/failed
-  speech remains visible and in model context, with its delivery state marked.
+| Component | Responsibility | Runs on |
+| --- | --- | --- |
+| Browser interface | Message input, transcript, status, Stop, and Reset | Controller browser |
+| Irona backend | Coordinates the conversation, service calls, and playback | Ubuntu, using Python and Flask |
+| Ollama | Loads and runs the language model; provides a local API | Ubuntu |
+| Qwen `qwen3.5:4b` | Generates the actual response text | Ubuntu's GPU |
+| ElevenLabs | Converts the reply into Elise's voice | ElevenLabs cloud |
+| Irona Player | Receives audio, plays it, and reports playback state | Temi's Android tablet |
+
+### Ollama And The Model
+
+**Ollama runs the model; Qwen is the model.** Ollama downloads model files,
+loads the selected model, and accepts requests from applications. Irona calls its
+local HTTP chat API at `127.0.0.1:11434`. Our wrapper disables cloud features.
+
+Qwen is the pretrained neural network that produces the reply. The current
+configuration uses `qwen3.5:4b` on the tested desktop's RTX 4090, with a
+4,096-token context and thinking disabled. Generating an answer with that model
+is called inference. Irona does not train or fine-tune it during conversation.
+
+### A Conversation Turn
+
+1. You type a message. The browser sends it to Irona's Flask application on
+   Ubuntu. Flask is the lightweight web server serving the UI and its API.
+2. Irona checks that the selected audio output is reachable before making an
+   inference request or spending speech credits.
+3. Irona sends Ollama the system prompt, recent conversation, and new message.
+   Qwen generates a short reply, which Irona adds to the transcript.
+4. Irona sends that reply text to ElevenLabs over HTTPS, using the Elise voice
+   and `eleven_flash_v2_5` speech model. ElevenLabs returns MP3 audio.
+5. Ubuntu sends the audio to Irona Player on Temi. The player reports when
+   playback actually starts and finishes.
+6. The browser polls Ubuntu for state, displaying generating, synthesizing,
+   speaking, or an actionable error. When the turn finishes, another can begin.
+
+One background worker handles one turn at a time to prevent overlapping speech.
+The initial implementation waits for the full text reply and synthesized audio
+before playback; it does not stream partial speech.
+
+### The Temi Connection
+
+Temi runs Android. Irona Player is a small Java application, installed as an APK,
+that uses Android's `MediaPlayer` to play the received audio. It does not run the
+LLM, contact ElevenLabs, or use Temi's built-in text-to-speech voice.
+
+ADB, or Android Debug Bridge, installs the app and provides the current
+development connection over Wi-Fi. A device-specific port forward connects
+Ubuntu's loopback port 8766 to the player's loopback HTTP endpoint on Temi.
+Requests need a private pairing token. The ElevenLabs API key stays on Ubuntu.
+
+Ubuntu checks playback about every 200 milliseconds. If these heartbeats stop,
+Temi stops playback after roughly 3.5 seconds. Browser Stop and the native Stop
+button both stop audio. There is no silent fallback to another speaker.
+
+**This is a development transport, not an unattended deployment.** The player
+must stay in the foreground. ADB enables privileged device access: use a trusted
+LAN and close Temi's debugging port when finished. No firmware update, Temi SDK,
+ROS dependency, or movement integration is required for this audio milestone.
+See [Temi integration](docs/temi-integration.md) for setup and reconnect commands.
+
+### Memory, Personality, And Privacy
+
+- **Conversation context:** Irona includes the latest six user/reply pairs in
+  subsequent model requests. This is temporary context in RAM, not learning or
+  permanent memory. The UI retains up to 40 messages. Reset or restarting the
+  application clears the conversation; transcripts are not written to disk.
+- **Personality:** [The system prompt](irona/system_prompt.txt) sets warmth,
+  brevity, and conversational habits. Edit it and restart to change behavior.
+  Replies are normally one or two sentences. The prompt shapes what Irona says;
+  the selected voice and speech settings shape how it sounds.
+- **Voice:** The current voice is Elise - Warm, Natural and Engaging
+  (`EST9Ui6982FZPSi7gCHi`). The voice ID and speech model are configurable.
+- **Cloud boundary:** Inference stays on Ubuntu, but the generated reply is
+  sent to ElevenLabs and can contain personal details from the conversation.
+  Local cleanup does not control the provider's retention policies.
+- **Temporary audio:** Temi uses app-private temporary files. Desktop mode uses
+  ignored `.runtime/audio/` MP3/WAV files with FFmpeg and paplay. Normal
+  completion, stop, and failures trigger cleanup; forced termination or power
+  loss can leave files behind.
+- **Stop behavior:** Stop acts during playback, not generation or synthesis.
+  Stopped or failed replies remain visible and in model context, with delivery
+  state marked. Reset is available when no turn is active.
+
+### Current Scope
+
+The owner confirmed hearing Elise and three consecutive conversational replies
+from the actual Temi speakers. Context recall, reset, browser/native Stop, and
+heartbeat expiry passed live checks; 66 automated tests cover the application
+and mocked services. [Verification notes](docs/verification.md) distinguish
+hardware evidence from automated tests.
+
+There is no microphone input, vision, navigation, autonomous movement, or
+LLM-generated actuator command execution. There is also no database, long-term
+memory, frontend build system, or agent framework. GitHub stores the source and
+history; it does not run the application.
+
+### Code Map
+
+| File or directory | Purpose |
+| --- | --- |
+| [irona/app.py](irona/app.py) | Browser page, JSON endpoints, and command checks |
+| [irona/pipeline.py](irona/pipeline.py) | Turn ordering, history, status, Stop, and Reset |
+| [irona/services.py](irona/services.py) | Ollama, ElevenLabs, and desktop audio calls |
+| [irona/temi.py](irona/temi.py) | Ubuntu-side robot playback and acknowledgements |
+| [irona/config.py](irona/config.py) | Environment configuration and validation |
+| [android/](android/) | Native Temi player and build configuration |
+| [tests/](tests/) | Focused tests with external services mocked |
 
 ## Setup On Ubuntu
 
